@@ -3,7 +3,7 @@
 // One job: show whether the Antigravity ACP provider is wired up, and let the
 // user fix it. Everything it renders comes from the same `readStatus` the CLI
 // prints, so the two surfaces cannot disagree.
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useId, useState } from "react";
 import { definePluginApp, useRpc } from "@get-bb/plugin-sdk/app";
 import type { rpcContract } from "./server";
 import { Button } from "@/components/ui/button";
@@ -194,32 +194,134 @@ function AntigravityPanel() {
   );
 }
 
-function AntigravityIcon({ className }: { className?: string }) {
+function AntigravityProviderIcon({ className }: { className?: string }) {
+  const rawId = useId();
+  const clipId = `agy-clip-${rawId.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
   return (
     <svg
-      viewBox="0 0 100 100"
-      fill="currentColor"
-      className={className}
+      viewBox="0 0 180 180"
+      width="16"
+      height="16"
+      className={className ?? "size-full"}
+      style={{
+        display: "block",
+        width: "100%",
+        height: "100%",
+        flexShrink: 0,
+      }}
+      fill="none"
       xmlns="http://www.w3.org/2000/svg"
     >
-      <path d="M85.2843 88.0301C90.1329 91.6664 97.4057 89.2422 90.7389 82.5755C70.7389 63.1816 74.9813 9.84827 50.1329 9.84827C25.2843 9.84827 29.5267 63.1816 9.52673 82.5755C2.25402 89.8483 10.1328 91.6664 14.9813 88.0301C33.7692 75.3028 32.5571 52.8786 50.1329 52.8786C67.7086 52.8786 66.4965 75.3028 85.2843 88.0301Z" />
+      <clipPath id={clipId}>
+        <path d="M144.248 149.062C151.748 154.688 162.998 150.938 152.685 140.625C121.748 110.625 128.31 28.125 89.8727 28.125C51.4352 28.125 57.9977 110.625 27.0602 140.625C15.8102 151.875 27.9977 154.688 35.4977 149.062C64.5602 129.375 62.6852 94.6875 89.8727 94.6875C117.06 94.6875 115.185 129.375 144.248 149.062Z" />
+      </clipPath>
+      <g clipPath={`url(#${clipId})`}>
+        <path
+          d="M144.248 149.062C151.748 154.688 162.998 150.938 152.685 140.625C121.748 110.625 128.31 28.125 89.8727 28.125C51.4352 28.125 57.9977 110.625 27.0602 140.625C15.8102 151.875 27.9977 154.688 35.4977 149.062C64.5602 129.375 62.6852 94.6875 89.8727 94.6875C117.06 94.6875 115.185 129.375 144.248 149.062Z"
+          fill="#3186FF"
+        />
+        <ellipse
+          cx="36.6225"
+          cy="43.0872"
+          rx="36.6225"
+          ry="43.0872"
+          transform="matrix(-0.112784 0.99362 -0.99362 -0.112781 106.557 -26.4847)"
+          fill="#FFE432"
+        />
+        <ellipse
+          cx="155.163"
+          cy="54.9292"
+          rx="47.4118"
+          ry="48.4541"
+          transform="rotate(76.9243 155.163 54.9292)"
+          fill="#FC413D"
+        />
+        <ellipse
+          cx="14.6006"
+          cy="65.4425"
+          rx="49.5515"
+          ry="64.192"
+          transform="rotate(74.1257 14.6006 65.4425)"
+          fill="#00B95C"
+        />
+        <ellipse
+          cx="18.1226"
+          cy="67.414"
+          rx="48.5679"
+          ry="53.4688"
+          transform="rotate(45.6065 18.1226 67.414)"
+          fill="#00B95C"
+        />
+        <ellipse
+          cx="121.837"
+          cy="166.945"
+          rx="46.6356"
+          ry="44.9084"
+          transform="rotate(76.9243 121.837 166.945)"
+          fill="#3186FF"
+        />
+        <ellipse
+          cx="53.9456"
+          cy="56.8997"
+          rx="53.9456"
+          ry="56.8997"
+          transform="matrix(-0.409539 0.912293 -0.912294 -0.409537 162.811 -25.895)"
+          fill="#FBBC04"
+        />
+        <path
+          d="M4.21557 239.063C-25.3231 227.467 25.1577 132.061 37.7105 100.085C50.2634 68.1097 84.3853 51.5888 113.924 63.1848C143.463 74.7809 178.474 138.65 165.921 170.626C153.368 202.601 33.7543 250.659 4.21557 239.063Z"
+          fill="#3186FF"
+        />
+        <path
+          d="M183.197 120.315C175.289 129.545 154.652 124.839 137.102 109.803C119.553 94.7668 111.738 75.0955 119.646 65.8656C127.554 56.6357 148.191 61.3423 165.74 76.3782C183.289 91.414 191.105 111.085 183.197 120.315Z"
+          fill="#749BFF"
+        />
+        <ellipse
+          cx="148.928"
+          cy="36.7252"
+          rx="71.1018"
+          ry="44.199"
+          transform="rotate(34.0763 148.928 36.7252)"
+          fill="#FC413D"
+        />
+        <ellipse
+          cx="37.848"
+          cy="46.0346"
+          rx="38.1008"
+          ry="22.1575"
+          transform="rotate(112.516 37.848 46.0346)"
+          fill="#FFEE48"
+        />
+      </g>
     </svg>
   );
 }
 
 export default definePluginApp((app) => {
-  app.slots.experimental_providerIcon({
-    providerId: "acp-antigravity",
-    icon: AntigravityIcon,
-  });
-  app.slots.experimental_providerIcon({
-    providerId: "antigravity",
-    icon: AntigravityIcon,
-  });
   app.slots.settingsSection({
     id: "antigravity-status",
     title: "Antigravity",
     component: AntigravityPanel,
   });
-});
 
+  const slots = app.slots as typeof app.slots & {
+    experimental_providerIcon?: (opts: {
+      providerKind: "agent" | "machine" | "environment";
+      providerId: string;
+      icon: (props: { className?: string }) => any;
+    }) => void;
+  };
+
+  if (typeof slots.experimental_providerIcon === "function") {
+    slots.experimental_providerIcon({
+      providerKind: "agent",
+      providerId: "acp-antigravity",
+      icon: AntigravityProviderIcon,
+    });
+    slots.experimental_providerIcon({
+      providerKind: "agent",
+      providerId: "antigravity",
+      icon: AntigravityProviderIcon,
+    });
+  }
+});
