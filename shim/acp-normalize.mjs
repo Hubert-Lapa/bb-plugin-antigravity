@@ -12,48 +12,11 @@
 // 4. Answers `models` CLI invocations with clean `id - Name` lines.
 
 import { spawn, execFileSync } from "node:child_process";
-import fs from "node:fs";
-import path from "node:path";
-import os from "node:os";
 import {
   CONTINUE_PROMPT,
   PromptTurn,
   autoContinueEnabled,
 } from "./continue-policy.mjs";
-
-function findCustomizationRoots(startDir) {
-  const roots = [];
-  if (!startDir || typeof startDir !== "string") return roots;
-  const home = os.homedir();
-  try {
-    let cur = path.resolve(startDir);
-    while (true) {
-      if (cur === home) break;
-      if (
-        fs.existsSync(path.join(cur, ".git")) ||
-        fs.existsSync(path.join(cur, ".agents", "skills")) ||
-        fs.existsSync(path.join(cur, "_agents", "skills"))
-      ) {
-        if (cur !== path.resolve(startDir) && !roots.includes(cur)) {
-          roots.push(cur);
-        }
-      }
-      const parent = path.dirname(cur);
-      if (parent === cur || parent === home) {
-        if (
-          parent !== home &&
-          (fs.existsSync(path.join(parent, ".git")) ||
-            fs.existsSync(path.join(parent, ".agents", "skills")))
-        ) {
-          if (!roots.includes(parent)) roots.push(parent);
-        }
-        break;
-      }
-      cur = parent;
-    }
-  } catch {}
-  return roots;
-}
 
 const args = process.argv.slice(2);
 
@@ -125,6 +88,60 @@ function composeRawId(familyId, effort) {
   }
   if (f.id.endsWith(`-${eff}`)) return f.id;
   return `${f.id}-${eff}`;
+}
+
+function resolveModelFromText(targetStr) {
+  if (!targetStr || typeof targetStr !== "string") return null;
+  const lower = targetStr.toLowerCase();
+  let foundFamily = null;
+  for (const f of FAMILIES) {
+    if (lower.includes(f.id.toLowerCase()) || lower.includes(f.name.toLowerCase())) {
+      foundFamily = f;
+      break;
+    }
+  }
+  if (!foundFamily) {
+    if (lower.includes("3.8") && lower.includes("flash")) {
+      foundFamily = FAMILIES.find((f) => f.id === "gemini-3.8-flash");
+    } else if (lower.includes("3.7") && lower.includes("flash")) {
+      foundFamily = FAMILIES.find((f) => f.id === "gemini-3.7-flash");
+    } else if (lower.includes("3.6") && lower.includes("flash")) {
+      foundFamily = FAMILIES.find((f) => f.id === "gemini-3.6-flash");
+    } else if (lower.includes("3.1") && lower.includes("pro")) {
+      foundFamily = FAMILIES.find((f) => f.id === "gemini-3.1-pro");
+    } else if (lower.includes("sonnet")) {
+      foundFamily = FAMILIES.find((f) => f.id === "claude-sonnet-4-6");
+    } else if (lower.includes("opus")) {
+      foundFamily = FAMILIES.find((f) => f.id === "claude-opus-4-6-thinking");
+    } else if (lower.includes("gpt-oss")) {
+      foundFamily = FAMILIES.find((f) => f.id === "gpt-oss-120b-medium");
+    }
+  }
+  if (!foundFamily) return null;
+
+  let effort = foundFamily.defaultEffort;
+  for (const e of foundFamily.efforts) {
+    if (lower.includes(e)) {
+      effort = e;
+      break;
+    }
+  }
+  return { familyId: foundFamily.id, effort };
+}
+
+function extractModelChangeFromPrompt(prompt) {
+  if (!Array.isArray(prompt)) return null;
+  for (const item of prompt) {
+    if (item && typeof item.text === "string") {
+      const match = item.text.match(
+        /setting\s+[`'"]?(?:Model\s+Selection|Model)[`'"]?\s+from\s+.*?\s+to\s+(.*?)(?:\.\s+|\.\n|\.$|<\/USER_SETTINGS_CHANGE>|\n)/i,
+      );
+      if (match) {
+        return resolveModelFromText(match[1].trim());
+      }
+    }
+  }
+  return null;
 }
 
 let activeFamilyId = "gemini-3.8-flash";
@@ -273,70 +290,11 @@ function normalizeInboundLine(line) {
   }
 
   if (method === "session/new" || method === "session/load" || method === "session/resume") {
-    let modified = false;
-    let nextParams = { ...params };
     if (params?.model) {
       const raw = composeRawId(params.model, activeEffort);
-      nextParams.model = raw;
-      modified = true;
-    }
-    const targetCwd = params?.cwd || process.cwd();
-    const repoRoots = findCustomizationRoots(targetCwd);
-    if (repoRoots.length > 0) {
-      const existing = Array.isArray(params?.additionalDirectories)
-        ? [...params.additionalDirectories]
-        : [];
-      for (const r of repoRoots) {
-        if (!existing.includes(r)) {
-          existing.push(r);
-          modified = true;
-        }
-      }
-      if (modified) {
-        nextParams.additionalDirectories = existing;
-      }
-    }
-    if (modified) {
       return JSON.stringify({
         ...message,
-        params: nextParams,
-      });
-    }
-  }
-
-  if (method === "session/prompt" && Array.isArray(params?.prompt)) {
-    let modified = false;
-    const nextPrompt = params.prompt.map((part) => {
-      if (
-        typeof part?.text === "string" &&
-        (part.text.includes("Available bb skills:") || part.text.includes("Available skills:")) &&
-        !part.text.includes("<skills>")
-      ) {
-        const match = part.text.match(/(?:Available bb skills:|Available skills:)([\s\S]*?)(?:<\/system_instructions>|$)/);
-        if (match) {
-          modified = true;
-          const skillsList = match[1].trim();
-          const transformed = skillsList
-            .split("\n")
-            .map((l) => {
-              const m = l.match(/^-\s*([^:]+):\s*(.*?)\s*\(SKILL\.md:\s*([^)]+)\)/);
-              if (m) {
-                const [, name, desc, p] = m;
-                return `- ${name.trim()} (${p.trim()}): ${desc.trim()}`;
-              }
-              return l;
-            })
-            .join("\n");
-          const skillsBlock = `\n<skills>\nYou can use specialized 'skills' to help you with complex tasks. Each skill has a name and a description listed below.\n\nMANDATORY SKILL POLICY: Before executing ANY search, read, command, or file-edit tools, check the Available skills list. If ANY skill matches the task domain (for example, UI/layout/mobile changes, antislop, unslop, bb CLI commands, workflows, or project conventions), you MUST read its SKILL.md instructions using view_file as your very first tool call. Do NOT write code or take actions without reading the governing skill first.\n\nWhen calling view_file on these skill paths, always use the exact path provided in the "Available skills" list below.\n\nAvailable skills:\n${transformed}\n</skills>\n`;
-          return { ...part, text: part.text + "\n" + skillsBlock };
-        }
-      }
-      return part;
-    });
-    if (modified) {
-      return JSON.stringify({
-        ...message,
-        params: { ...params, prompt: nextPrompt },
+        params: { ...params, model: raw },
       });
     }
   }
@@ -354,6 +312,19 @@ function normalizeOutboundLine(line) {
 
   if (typeof message !== "object" || message === null) return line;
 
+  if (typeof message.id === "string" && message.id.startsWith("bb-antigravity-set-model-")) {
+    if (message.result?.configOptions) {
+      const rawModelOpt = message.result.configOptions.find(
+        (o) => o.id === "model" || o.category === "model",
+      );
+      if (rawModelOpt?.currentValue) {
+        const dec = decomposeRawId(rawModelOpt.currentValue);
+        activeFamilyId = dec.familyId;
+        activeEffort = dec.effort;
+      }
+    }
+  }
+
   if (message.id !== undefined && message.result !== undefined) {
     const reqMeta = pendingRequests.get(String(message.id));
     if (reqMeta) pendingRequests.delete(String(message.id));
@@ -362,7 +333,14 @@ function normalizeOutboundLine(line) {
   }
 
   if (message.method === "session/update" && message.params?.update?.configOptions) {
-    const configOptions = buildCleanConfigOptions(message.params.update.configOptions);
+    const rawOpts = message.params.update.configOptions;
+    const rawModelOpt = rawOpts.find((o) => o.id === "model" || o.category === "model");
+    if (rawModelOpt?.currentValue) {
+      const dec = decomposeRawId(rawModelOpt.currentValue);
+      activeFamilyId = dec.familyId;
+      activeEffort = dec.effort;
+    }
+    const configOptions = buildCleanConfigOptions(rawOpts);
     return JSON.stringify({
       ...message,
       params: {
@@ -378,29 +356,15 @@ function normalizeOutboundLine(line) {
   return line;
 }
 
-const initRoots = findCustomizationRoots(process.cwd());
-const currentExtra = process.env.AGY_EXTRA_ARGS || "";
-let extraArgsStr = currentExtra;
-if (!extraArgsStr.includes("--print-timeout")) {
-  extraArgsStr = `${extraArgsStr} --print-timeout 60m`.trim();
-}
-for (const r of initRoots) {
-  if (!extraArgsStr.includes(r)) {
-    extraArgsStr = `${extraArgsStr} --add-dir ${r}`.trim();
-  }
-}
-process.env.AGY_EXTRA_ARGS = extraArgsStr;
-
 const child = spawn(adapterPath, adapterArgs, {
   env: process.env,
   stdio: ["pipe", "pipe", "inherit"],
 });
 
 // agy-acp runs `agy -p` per prompt and returns end_turn when the process
-// exits. Antigravity often yields after starting a background command,
-// or finishes tool execution before producing final text, or hits print timeouts.
+// exits. Antigravity often yields after starting a background command.
 // Hold the original session/prompt RPC open and nudge the same session
-// until the last assistant text no longer looks like an incomplete turn or yield.
+// until the last assistant text no longer looks like a yield.
 let promptTurn = null;
 let promptOrigin = null;
 let continueSeq = 0;
@@ -433,21 +397,47 @@ function handleInboundMessage(message) {
     promptOrigin = {
       id: message.id,
       sessionId: message.params?.sessionId,
-      cancelled: false,
     };
     promptTurn = new PromptTurn();
+
+    const detected = extractModelChangeFromPrompt(message.params?.prompt);
+    if (
+      detected &&
+      message.params?.sessionId &&
+      (detected.familyId !== activeFamilyId || detected.effort !== activeEffort)
+    ) {
+      activeFamilyId = detected.familyId;
+      activeEffort = detected.effort;
+      const rawModelId = composeRawId(activeFamilyId, activeEffort);
+      const setConfigRpc = {
+        jsonrpc: "2.0",
+        id: `bb-antigravity-set-model-${Date.now()}`,
+        method: "session/set_config_option",
+        params: {
+          sessionId: message.params.sessionId,
+          configId: "model",
+          value: rawModelId,
+        },
+      };
+      child.stdin.write(`${JSON.stringify(setConfigRpc)}\n`);
+      process.stderr.write(
+        `acp-normalize: prompt setting change detected, set model to ${rawModelId} for session ${message.params.sessionId}\n`,
+      );
+    }
   }
-  if (message.method === "session/cancel" && promptOrigin?.sessionId === message.params?.sessionId) {
-    promptOrigin.cancelled = true;
+  if (message.method === "session/cancel") {
+    promptTurn = null;
+    promptOrigin = null;
   }
 }
 
 function rewriteOutbound(message) {
+  if (typeof message.id === "string" && message.id.startsWith("bb-antigravity-set-model-")) {
+    return null;
+  }
+
   const update = message.params?.update;
   if (message.method === "session/update" && update) {
-    if (update.sessionUpdate === "tool_call") {
-      promptTurn?.onToolCall();
-    }
     const text = update.content?.text;
     if (update.sessionUpdate === "agent_message_chunk" && typeof text === "string") {
       promptTurn?.onAgentText(text);
@@ -464,34 +454,19 @@ function rewriteOutbound(message) {
   if (!isPromptReply) return message;
 
   const stopReason = message.result?.stopReason;
-  const resultError = message.result?.error || message.error;
   if (
     autoContinueEnabled() &&
-    !promptOrigin.cancelled &&
     promptTurn &&
     promptOrigin.sessionId &&
-    promptTurn.shouldContinue(stopReason, resultError)
+    !message.error &&
+    promptTurn.shouldContinue(stopReason)
   ) {
     promptTurn.markContinued();
     sendContinue(promptOrigin.sessionId);
     return null;
   }
 
-  const id = promptOrigin.id;
-  const exhausted = autoContinueEnabled() && !promptOrigin.cancelled &&
-    !resultError && promptTurn?.shouldContinue(stopReason, null, Infinity);
-  promptTurn = null;
-  promptOrigin = null;
-  if (exhausted) {
-    return {
-      jsonrpc: "2.0", id,
-      error: {
-        code: -32000,
-        message: "Antigravity stopped repeatedly without a final reply after automatic continuation. Send a follow-up to resume the task.",
-      },
-    };
-  }
-  return { ...message, id };
+  return { ...message, id: promptOrigin.id };
 }
 
 child.on("error", (error) => {
