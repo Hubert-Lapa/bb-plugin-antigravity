@@ -209,11 +209,8 @@ function AntigravityIcon({ className }: { className?: string }) {
 
 export default definePluginApp((app) => {
   app.slots.experimental_providerIcon({
+    providerKind: "agent",
     providerId: "acp-antigravity",
-    icon: AntigravityIcon,
-  });
-  app.slots.experimental_providerIcon({
-    providerId: "antigravity",
     icon: AntigravityIcon,
   });
   app.slots.settingsSection({
