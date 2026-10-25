@@ -197,9 +197,13 @@ function AntigravityPanel() {
 function AntigravityIcon({ className }: { className?: string }) {
   return (
     <svg
+      data-icon-root=""
+      width="1em"
+      height="1em"
       viewBox="0 0 100 100"
       fill="currentColor"
       className={className}
+      style={{ maxWidth: "100%", maxHeight: "100%" }}
       xmlns="http://www.w3.org/2000/svg"
     >
       <path d="M85.2843 88.0301C90.1329 91.6664 97.4057 89.2422 90.7389 82.5755C70.7389 63.1816 74.9813 9.84827 50.1329 9.84827C25.2843 9.84827 29.5267 63.1816 9.52673 82.5755C2.25402 89.8483 10.1328 91.6664 14.9813 88.0301C33.7692 75.3028 32.5571 52.8786 50.1329 52.8786C67.7086 52.8786 66.4965 75.3028 85.2843 88.0301Z" />
@@ -212,7 +216,7 @@ export default definePluginApp((app) => {
     providerKind: "agent",
     providerId: "acp-antigravity",
     icon: AntigravityIcon,
-  });
+  } as unknown as Parameters<typeof app.slots.experimental_providerIcon>[0]);
   app.slots.settingsSection({
     id: "antigravity-status",
     title: "Antigravity",
