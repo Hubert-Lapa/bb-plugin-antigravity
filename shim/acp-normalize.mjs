@@ -89,33 +89,35 @@ if (!adapterPath) {
 function loadFamilies() {
   let rawList = [];
   const cachePath = path.join(os.homedir(), ".agy-acp", "models.json");
-  if (fs.existsSync(cachePath)) {
+  // A persisted adapter cache is a fallback, not an authoritative catalog forever.
+  // Probe once per shim process, including BB's background catalog probes.
+  try {
+    const agyBin = process.env.AGY_BIN || "agy";
+    const out = execFileSync(agyBin, ["models"], { encoding: "utf8", timeout: 10000, stdio: ["ignore", "pipe", "pipe"] });
+    for (const line of out.split("\n")) {
+      const [value, name] = line.trim().split("\t");
+      if (value && name) rawList.push({ value, name });
+    }
+    if (rawList.length === 0) throw new Error("agy returned an empty catalog");
+    // The underlying adapter reads this file too. Replace atomically, never truncate it.
+    const temporary = `${cachePath}.${process.pid}.tmp`;
     try {
-      rawList = JSON.parse(fs.readFileSync(cachePath, "utf8"));
+      fs.mkdirSync(path.dirname(cachePath), { recursive: true });
+      fs.writeFileSync(temporary, JSON.stringify(rawList));
+      fs.renameSync(temporary, cachePath);
+    } catch (error) {
+      process.stderr.write(`Could not persist the fresh model catalog: ${error.message}\n`);
+    } finally {
+      try { fs.unlinkSync(temporary); } catch {}
+    }
+  } catch (error) {
+    process.stderr.write(`Could not refresh Antigravity models; trying saved catalog: ${error.message}\n`);
+    try {
+      const saved = JSON.parse(fs.readFileSync(cachePath, "utf8"));
+      if (Array.isArray(saved)) rawList = saved.filter(item => item && typeof item.value === "string" && item.value && typeof item.name === "string" && item.name);
     } catch {}
   }
-
-  if (!rawList || rawList.length === 0) {
-    try {
-      const agyBin = process.env.AGY_BIN || "agy";
-      const out = execFileSync(agyBin, ["models"], { encoding: "utf8", timeout: 10000 });
-      for (const line of out.split("\n")) {
-        const trimmed = line.trim();
-        if (!trimmed || trimmed.startsWith("Fetching")) continue;
-        const [value, name] = trimmed.split("\t");
-        if (value && name) rawList.push({ value, name });
-      }
-    } catch {}
-  }
-
-  if (!rawList || rawList.length === 0) {
-    return [
-      { id: "gemini-3.8-flash", name: "Gemini 3.8 Flash", efforts: ["high", "medium", "low"], defaultEffort: "high" },
-      { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6 (Thinking)", efforts: ["medium"], defaultEffort: "medium" },
-      { id: "claude-opus-4-6-thinking", name: "Claude Opus 4.6 (Thinking)", efforts: ["medium"], defaultEffort: "medium" },
-      { id: "gpt-oss-120b-medium", name: "GPT-OSS 120B (Medium)", efforts: ["medium"], defaultEffort: "medium" },
-    ];
-  }
+  if (rawList.length === 0) throw new Error("Antigravity model catalog unavailable; no saved catalog");
 
   const baseCounts = new Map();
   for (const item of rawList) {
@@ -165,10 +167,9 @@ function loadFamilies() {
   return Array.from(familyMap.values());
 }
 
-let FAMILIES = loadFamilies();
+const FAMILIES = loadFamilies();
 
 function getCleanModelOptions() {
-  FAMILIES = loadFamilies();
   return FAMILIES.map((f) => ({
     value: f.id,
     name: f.name,

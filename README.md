@@ -2,7 +2,7 @@
 
 Run bb threads on **Google Antigravity** over ACP.
 
-Antigravity's `agy` CLI talks to an ACP stdio adapter. This plugin downloads that adapter, points bb's ACP bridge at it, normalizes models into clean families (Gemini 3.8 Flash, Gemini 3.7 Flash, Gemini 3.6 Flash, Gemini 3.1 Pro, Claude Sonnet/Opus 4.6, GPT-OSS 120B), and exposes native reasoning effort (Low / Medium / High).
+Antigravity's `agy` CLI talks to an ACP stdio adapter. This plugin downloads that adapter, points bb's ACP bridge at it, normalizes the CLI's current models into clean families, and exposes native reasoning effort (Low / Medium / High).
 
 ## Requirements
 
@@ -49,15 +49,11 @@ There is a settings panel under **Extensions → Plugins → Antigravity**.
 
 ### Models and reasoning
 
-Models come from the ACP session and are normalized into:
+With the compatibility shim enabled, each new shim process runs `agy models` before starting the adapter. The current CLI catalog replaces `~/.agy-acp/models.json` atomically; that file is only a fallback if the CLI fails. Fallback use is reported on stderr. Without either a live or saved catalog, discovery fails instead of inventing a fixed model list.
 
-- **Gemini 3.8 Flash** (Reasoning: Low, Medium, High — default High)
-- **Gemini 3.7 Flash** (Reasoning: Low, Medium, High — default High)
-- **Gemini 3.6 Flash** (Reasoning: Low, Medium, High — default High)
-- **Gemini 3.1 Pro** (Reasoning: Low, High — default High)
-- **Claude Sonnet 4.6 (Thinking)**
-- **Claude Opus 4.6 (Thinking)**
-- **GPT-OSS 120B (Medium)**
+Families with multiple `-low`, `-medium` and `-high` variants are shown once, with a separate reasoning control. For example, `gemini-4-argon-medium/high/low` becomes **Gemini 4 Argon** with Medium, High and Low efforts. Available families follow the authenticated CLI account, not this README.
+
+BB also caches provider catalogs: in BB 0.48.0 a catalog older than ten minutes is served while it refreshes in the background. Read it again after discovery finishes. Compare `agy models` with `bb provider models acp-antigravity --json` to distinguish CLI availability from ACP/BB caching. An already running conversation keeps its existing shim and catalog until its provider session is restarted.
 
 ## Settings
 
