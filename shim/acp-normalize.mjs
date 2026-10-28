@@ -86,20 +86,94 @@ if (!adapterPath) {
   process.exit(64);
 }
 
-const FAMILIES = [
-  { id: "gemini-3.8-flash", name: "Gemini 3.8 Flash", efforts: ["high", "medium", "low"], defaultEffort: "high" },
-  { id: "gemini-3.7-flash", name: "Gemini 3.7 Flash", efforts: ["high", "medium", "low"], defaultEffort: "high" },
-  { id: "gemini-3.6-flash", name: "Gemini 3.6 Flash", efforts: ["high", "medium", "low"], defaultEffort: "high" },
-  { id: "gemini-3.1-pro", name: "Gemini 3.1 Pro", efforts: ["high", "low"], defaultEffort: "high" },
-  { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6 (Thinking)", efforts: ["medium"], defaultEffort: "medium" },
-  { id: "claude-opus-4-6-thinking", name: "Claude Opus 4.6 (Thinking)", efforts: ["medium"], defaultEffort: "medium" },
-  { id: "gpt-oss-120b-medium", name: "GPT-OSS 120B (Medium)", efforts: ["medium"], defaultEffort: "medium" },
-];
+function loadFamilies() {
+  let rawList = [];
+  const cachePath = path.join(os.homedir(), ".agy-acp", "models.json");
+  if (fs.existsSync(cachePath)) {
+    try {
+      rawList = JSON.parse(fs.readFileSync(cachePath, "utf8"));
+    } catch {}
+  }
 
-const CLEAN_MODEL_OPTIONS = FAMILIES.map((f) => ({
-  value: f.id,
-  name: f.name,
-}));
+  if (!rawList || rawList.length === 0) {
+    try {
+      const agyBin = process.env.AGY_BIN || "agy";
+      const out = execFileSync(agyBin, ["models"], { encoding: "utf8", timeout: 10000 });
+      for (const line of out.split("\n")) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith("Fetching")) continue;
+        const [value, name] = trimmed.split("\t");
+        if (value && name) rawList.push({ value, name });
+      }
+    } catch {}
+  }
+
+  if (!rawList || rawList.length === 0) {
+    return [
+      { id: "gemini-3.8-flash", name: "Gemini 3.8 Flash", efforts: ["high", "medium", "low"], defaultEffort: "high" },
+      { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6 (Thinking)", efforts: ["medium"], defaultEffort: "medium" },
+      { id: "claude-opus-4-6-thinking", name: "Claude Opus 4.6 (Thinking)", efforts: ["medium"], defaultEffort: "medium" },
+      { id: "gpt-oss-120b-medium", name: "GPT-OSS 120B (Medium)", efforts: ["medium"], defaultEffort: "medium" },
+    ];
+  }
+
+  const baseCounts = new Map();
+  for (const item of rawList) {
+    const m = item.value?.match(/^(.*?)-(high|medium|low)$/);
+    if (m) {
+      baseCounts.set(m[1], (baseCounts.get(m[1]) || 0) + 1);
+    }
+  }
+
+  const familyMap = new Map();
+  for (const item of rawList) {
+    const rawId = item.value;
+    const rawName = item.name || rawId;
+    const m = rawId?.match(/^(.*?)-(high|medium|low)$/);
+
+    if (m && (baseCounts.get(m[1]) || 0) > 1) {
+      const familyId = m[1];
+      const effort = m[2];
+      const cleanName = rawName.replace(/\s*\((?:High|Medium|Low)\)\s*$/i, "").trim();
+
+      if (!familyMap.has(familyId)) {
+        familyMap.set(familyId, {
+          id: familyId,
+          name: cleanName,
+          efforts: [effort],
+          defaultEffort: effort,
+        });
+      } else {
+        const fam = familyMap.get(familyId);
+        if (!fam.efforts.includes(effort)) {
+          fam.efforts.push(effort);
+        }
+        if (effort === "high") {
+          fam.defaultEffort = "high";
+        }
+      }
+    } else {
+      familyMap.set(rawId, {
+        id: rawId,
+        name: rawName,
+        efforts: ["medium"],
+        defaultEffort: "medium",
+      });
+    }
+  }
+
+  return Array.from(familyMap.values());
+}
+
+let FAMILIES = loadFamilies();
+
+function getCleanModelOptions() {
+  FAMILIES = loadFamilies();
+  return FAMILIES.map((f) => ({
+    value: f.id,
+    name: f.name,
+  }));
+}
 
 function decomposeRawId(rawId) {
   if (!rawId || typeof rawId !== "string") return { familyId: "gemini-3.8-flash", effort: "high" };
@@ -144,7 +218,7 @@ function buildCleanConfigOptions(existingOptions = []) {
     category: "model",
     type: "select",
     currentValue: activeFamilyId,
-    options: CLEAN_MODEL_OPTIONS,
+    options: getCleanModelOptions(),
   };
 
   const thoughtOpt = {
